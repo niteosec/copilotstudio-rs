@@ -1,4 +1,4 @@
-//! Live smoke test against a real Copilot Studio agent (docs/DESIGN.md §11.3).
+//! Live smoke test against a real Copilot Studio agent (docs/DESIGN.md §11.4).
 //!
 //! Ignored unless all of these are set:
 //!   COPILOTSTUDIO_TOKEN            a delegated (or OBO / app-only) access token for the audience

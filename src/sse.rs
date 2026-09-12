@@ -6,11 +6,12 @@
 //! surface live.
 //!
 //! Spec behaviours kept: `\n`, `\r\n` and `\r` line endings; `:` comment lines; one leading space
-//! stripped from field values; multi-line `data` joined with `\n`; `id` persists across events until
-//! changed (the last-event-id buffer); `retry` and unknown fields ignored; a leading UTF-8 BOM
-//! skipped. One deliberate superset: [`SseParser::finish`] emits a trailing event that was not
-//! terminated by a blank line (matches the Python client's line-based reader; see `docs/DESIGN.md`
-//! D10).
+//! stripped from field values; multi-line `data` joined with `\n`; `retry` and unknown fields
+//! ignored; a leading UTF-8 BOM skipped. [`SseEvent::id`] is the `id:` field of *that* event block
+//! (`None` when absent) — what the Python client and the JS client's `eventsource-client` report —
+//! while [`SseParser::last_event_id`] is the persisting last-event-id buffer used for resumption.
+//! One deliberate superset: [`SseParser::finish`] emits a trailing event that was not terminated
+//! by a blank line (matches the Python client's line-based reader; see `docs/DESIGN.md` D10).
 
 /// One parsed SSE event.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -19,7 +20,7 @@ pub struct SseEvent {
     pub event: Option<String>,
     /// The concatenated `data:` lines, joined with `\n`.
     pub data: String,
-    /// The last-event-id in effect when this event was dispatched.
+    /// The `id:` field carried by this event block, `None` when it had none.
     pub id: Option<String>,
 }
 
@@ -29,6 +30,7 @@ pub struct SseParser {
     buf: Vec<u8>,
     event_type: Option<String>,
     data: Option<String>,
+    event_id: Option<String>,
     last_id: Option<String>,
     started: bool,
     pending_lf: bool,
@@ -114,7 +116,10 @@ impl SseParser {
                 }
                 None => self.data = Some(value.to_owned()),
             },
-            "id" if !value.contains('\0') => self.last_id = Some(value.to_owned()),
+            "id" if !value.contains('\0') => {
+                self.event_id = Some(value.to_owned());
+                self.last_id = Some(value.to_owned());
+            }
             _ => {}
         }
         None
@@ -122,10 +127,8 @@ impl SseParser {
 
     fn dispatch(&mut self) -> Option<SseEvent> {
         let event = self.event_type.take();
-        match self.data.take() {
-            Some(data) => Some(SseEvent { event, data, id: self.last_id.clone() }),
-            None => None,
-        }
+        let id = self.event_id.take();
+        self.data.take().map(|data| SseEvent { event, data, id })
     }
 }
 
@@ -170,9 +173,11 @@ mod tests {
     }
 
     #[test]
-    fn id_persists_until_changed() {
-        let ev = collect(&["id: 1\nevent: activity\ndata: a\n\nevent: activity\ndata: b\n\nid: 2\ndata: c\n\n"]);
-        assert_eq!(ev.iter().map(|e| e.id.as_deref()).collect::<Vec<_>>(), vec![Some("1"), Some("1"), Some("2")]);
+    fn id_is_per_event_while_last_event_id_persists() {
+        let mut p = SseParser::new();
+        let ev = p.feed(b"id: 1\nevent: activity\ndata: a\n\nevent: activity\ndata: b\n\nid: 2\ndata: c\n\n");
+        assert_eq!(ev.iter().map(|e| e.id.as_deref()).collect::<Vec<_>>(), vec![Some("1"), None, Some("2")]);
+        assert_eq!(p.last_event_id(), Some("2"));
     }
 
     #[test]

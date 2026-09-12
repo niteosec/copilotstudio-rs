@@ -228,7 +228,9 @@ impl CopilotClient {
                 Err(Error::InvalidArgument("CopilotClient.subscribe: conversation_id cannot be empty"))?;
             }
             let url = subscribe_url(&self.effective_settings(), &conversation_id)?;
+            // .NET and Python send `Content-Type: application/json` on subscribe (JS does not).
             let mut extra = HeaderMap::new();
+            extra.insert(CONTENT_TYPE, HeaderValue::from_static(headers::APPLICATION_JSON));
             if let Some(id) = &last_event_id {
                 extra.insert(headers::LAST_EVENT_ID, header_value(id)?);
             }

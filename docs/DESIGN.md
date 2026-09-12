@@ -193,7 +193,11 @@ this pin: `x-ms-client-request-id`, `x-ms-correlation-id`, `x-cci-agent-version`
 
 **Expected path — `Content-Type: text/event-stream`.** Standard Server-Sent Events. Only events with
 `event: activity` are surfaced; their `data:` is one JSON `Activity`. The `id:` field (when present)
-is the SSE event id, surfaced by `subscribe` for resumption. Any other event type is ignored.
+is that event's id, surfaced by `subscribe` for resumption (per-event, as the Python client and the
+JS client's `eventsource-client` report it; the persisting last-event-id is `SseParser::last_event_id`).
+The service ends every turn with an `event: end` and closes the response: the JS client stops on
+`end` (its SSE library would otherwise reconnect), .NET and Python stop when the stream closes. The
+port stops on close, like .NET; `end` and every other event type are ignored.
 
 ```
 event: activity
@@ -205,8 +209,9 @@ data: {"type":"message","text":"Hello","conversation":{"id":"…"}, …}
 
 **Fallback path — anything else.** .NET logs a warning and parses the whole body as JSON:
 `StartResponse { activities, conversationId? }`, `ExecuteTurnResponse { activities }`,
-`SubscribeResponse { activities }`, each yielding `activities` in order. Python/JS have no fallback.
-The port implements the .NET fallback.
+`SubscribeResponse { activities }`, each yielding `activities` in order. Python has no fallback and
+yields nothing; JS reconnects forever (observed in the differential harness, §11.3). The port
+implements the .NET fallback.
 
 **Errors.** Any non-2xx status is an error carrying the status and the response body text (.NET
 reads the body; Python/JS surface the status only).
@@ -242,8 +247,9 @@ Serialisation rules that matter on the wire:
 - camelCase property names; `from_property` ↔ `from`; `ConversationReference.agent` ↔ `bot`.
 - Absent/null fields are omitted (.NET `WhenWritingNull`, Python `exclude_unset`).
 - `channelId` is a string `"channel[:subChannel]"`.
-- `entities[]` are open objects keyed by `type`; well-known types (`streaminfo`, `mention`, …)
-  are typed views over the same JSON. Unknown entity types are preserved verbatim.
+- `entities[]` are open objects keyed by `type`; `streaminfo` has a typed view (`StreamInfo`),
+  every other type (including the well-known `mention`, `ProductInfo`, citations) is reached
+  through the entity's open property map. Unknown entity types are preserved verbatim.
 - Unknown top-level properties are preserved (.NET `Properties` extension data).
 - `channelData`, `value`, `attachments[].content` are opaque JSON.
 
@@ -326,12 +332,54 @@ the reference structure:
 | `error` | `errors/`, `errorHelper.ts` | `Error` + `SettingsError`. |
 | `activity` | `microsoft-agents-activity` | Activity schema (§3.8). Candidate for a separate crate once it grows beyond what the client needs. |
 
+### 5.1 Surface coverage
+
+Every public member of the three clients' packages, and what the port does with it.
+✓ ported · ≈ ported in a different shape · ✗ not ported (reason).
+
+| Upstream member | .NET | Python | JS | Port |
+|---|---|---|---|---|
+| `StartConversationAsync(bool)` / `start_conversation` / `startConversationStreaming(bool)` | ● | ● | ● | ✓ `start_conversation(bool)` |
+| `StartConversationAsync(StartRequest)` / `start_conversation_with_request` / `startConversationStreaming(StartRequest)` | ● | ● | ● | ✓ `start_conversation_with_request` |
+| `AskQuestionAsync(string, conversationId?)` / `ask_question` / `askQuestionAsync` (JS: deprecated, non-streaming) | ● | ● | ● | ✓ `ask_question(text, Option<&str>)` |
+| `SendActivityAsync(IActivity)` / `send_activity` / `sendActivityStreaming(activity, conversationId?)` | ● | ● | ● | ✓ `send_activity(activity)`; JS's optional second argument is covered by `execute` |
+| `ExecuteAsync(conversationId, IActivity)` / `execute` / `executeStreaming` | ● | ● | ● | ✓ `execute(conversation_id, activity)` (D16) |
+| `SubscribeAsync` / `subscribe` / `subscribeAsync` | ● | ● | ● | ✓ `subscribe(conversation_id, last_event_id)` (D3) |
+| `ScopeFromSettings` / `scope_from_settings` / `ScopeHelper.getScopeFromSettings` | ● | ● | ● | ✓ `scope_from_settings`, `CopilotClient::scope` |
+| `ScopeFromCloud` / `scope_from_cloud` | ● | ● | – | ✓ `scope_from_cloud` |
+| `AskQuestionAsync(IActivity)` (obsolete) / `ask_question_with_activity` | ● | ● | – | ✗ deprecated alias of `send_activity` |
+| JS non-streaming `execute` / `startConversationAsync` / `sendActivity` (deprecated) | – | – | ● | ✗ collect the stream (`try_collect`) |
+| JS `startConversationWithResponse` / `executeWithResponse`, `createStartResponse` / `createExecuteTurnResponse` | – | – | ● | ✗ JS-only convenience wrappers around the same streams |
+| Constructor with fixed token / `token` string | – | ● | ● | ✓ `CopilotClient::new(settings, token)` |
+| Constructor with `tokenProviderFunction` / `IHttpClientFactory` + logger | ● | – | – | ✓ `builder().token_provider(_).http_client(_)`; logger → `tracing` |
+| Python `client_session_settings` (aiohttp kwargs) | – | ● | – | ≈ `builder().http_client(reqwest::Client)` |
+| `Settings` field / `settings` attribute | ● | ● | (private) | ✓ `settings()` (immutable; island override applied per request) |
+| `ICopilotClient` / `CopilotClientProtocol` interface | ● | ● | – | ✗ no trait yet — planned (§12) so consumers can mock the client |
+| `ConnectionSettings`: environment id, schema name, cloud, agent type, custom cloud, direct URL, experimental, diagnostics | ● | ● | ● | ✓ same fields |
+| `ConnectionSettings.CdsBotId` (.NET) | ● | – | – | ✗ only used by `OrchestratedClient` |
+| JS `appClientId` / `tenantId` / `authority` (deprecated auth fields) | – | – | ● | ✗ auth is outside the client |
+| JS `diagnosticsPseudonymKey` | – | – | ● | ✗ telemetry-only |
+| `ConnectionSettings(IConfigurationSection)` / `populate_from_environment` / `loadCopilotStudioConnectionSettingsFromEnv` | ● | ● | ● | ≈ `from_env()` with the Python variable names (D14) |
+| `PowerPlatformEnvironment.GetCopilotStudioConnectionUrl` / `get_copilot_studio_connection_url` / `getCopilotStudioConnectionUrl` (+ JS strategies) | ● | ● | ● | ✓ `connection_url`, `subscribe_url` |
+| `GetTokenAudience` / `get_token_audience` / `getTokenAudience` | ● | ● | ● | ✓ `token_audience` (full signature) |
+| `GetOrchestratedConnectionUrl` | ● | – | – | ✗ orchestrated API |
+| `PowerPlatformCloud`, `AgentType` | ● | ● | ● | ✓ |
+| `CopilotStudioHeaderNames` | ● | – | – | ✓ `headers` |
+| `UserAgentHelper` | ● | ● | ● | ✓ `user_agent()` |
+| `StartRequest`, `ExecuteTurnRequest`, `StartResponse`, `ExecuteTurnResponse`, `SubscribeResponse`, `SubscribeEvent` | ● | ● | ● | ✓ `models` (JS `ExecuteTurnRequest.conversationId`: D16) |
+| `SubscribeRequest` (.NET: empty POST body; JS: an input shape) | ● | ● | ● | ✗ `subscribe` is a GET (D3) |
+| `OrchestratedClient` / `IOrchestratedClient` / `Models/Orchestrated*` | ● | – | – | ✗ "intended for internal use only" |
+| `CopilotStudioWebChat` | – | – | ● | ✗ browser WebChat adapter |
+| Error resources / `CopilotStudioClientErrors` | – | ● | ● | ≈ `SettingsError` / `Error` variants with the upstream messages (D12) |
+| `Activity` schema (activity package) | ● | ● | ● | ✓ the fields and nested types the client touches (§3.8); cards stay opaque JSON; typed entity view for `streaminfo` only |
+
 Not ported (documented so it is a decision, not an omission):
 
 - `OrchestratedClient` / `IOrchestratedClient` (.NET) — "ExternalOrchestration API … intended for
   internal use only". Different endpoint family (`/powervirtualagents/orchestrated/…`).
 - `CopilotStudioWebChat` (JS) — a Bot Framework WebChat adapter, browser-only.
-- Telemetry/OpenTelemetry spans (JS `observability/`) — replaced by `tracing` spans.
+- Telemetry/OpenTelemetry spans and pseudonymised diagnostics (JS `observability/`,
+  `diagnosticsPseudonymKey`) — replaced by plain `tracing` events.
 - `populate_from_environment` / `loadCopilotStudioConnectionSettingsFromEnv` — ported as
   `ConnectionSettings::from_env()` with the Python variable names.
 
@@ -348,18 +396,19 @@ arrives with the Direct Line transport (§11).
 |---|---|---|---|---|
 | D1 | Conversation id reset on start | .NET keeps the previous id; JS resets to `StartRequest.conversation_id` / empty | JS | With .NET's "only set if empty" rule, a second start on the same client keeps a stale id when the response carries no header. JS fixed this; Python is unaffected only because it overwrites on every message. |
 | D2 | Path-segment encoding | JS `encodeURIComponent`; .NET/Python raw | encode | Raw interpolation of `/`, `?`, `#` produces a different resource. Encoding is a no-op for well-formed schema names and ids. |
-| D3 | `subscribe` method | .NET `POST {}`; Python/JS `GET` | `GET` | Newer clients; SSE resumption via `Last-Event-ID` is a GET idiom. .NET marks the API obsolete/internal. |
+| D3 | `subscribe` method | .NET `POST {}`; Python/JS `GET` | `GET`, with `Content-Type: application/json` (sent by .NET and Python, not JS) | Newer clients; SSE resumption via `Last-Event-ID` is a GET idiom. .NET marks the API obsolete/internal. |
 | D4 | Streaming text accumulation | JS mutates `typing` activities' `text`; .NET/Python don't | don't; expose `stream_info()` | Mutating activities hides the raw protocol; accumulation is a caller-side concern. |
 | D5 | Timestamps | typed `datetime` / `DateTimeOffset` | `String` (RFC 3339 as sent) | A strict typed parse would fail whole activities on any format drift; a typed accessor can be added without a wire change. |
 | D6 | Diagnostics | `EnableDiagnostics` prints URL + all response headers | same, via `tracing::debug!`, `Authorization` redacted | Never log bearer tokens. |
 | D7 | `StartRequest.conversation_id` transport | .NET body + `x-ms-conversation-id` header; JS URL path; Python body only | .NET | Origin implementation; Python's model mirrors it. |
 | D8 | HTTP error detail | .NET includes the body; Python/JS status only | .NET | Strictly more information. |
-| D9 | Non-SSE response | .NET JSON fallback; Python/JS parse SSE regardless | .NET | Origin implementation. |
+| D9 | Non-SSE response | .NET JSON fallback; Python yields nothing; JS reconnects forever | .NET | Origin implementation, and the only one that terminates usefully. |
 | D10 | Final SSE event without trailing blank line | spec (and .NET parser) discards; Python's line parser emits | emit at EOF | Superset that matches Python; the service terminates streams cleanly either way. |
 | D11 | `ask_question` conversation account | .NET may send `conversation: {}` when no id is known | always send the resolved id (Python) | Strictly more informative; identical when an id is known. |
 | D12 | `error` codes | Python `-650xx`, JS `-1400xx` numeric codes | none; typed enum variants with upstream messages | Codes differ between clients; the enum is the Rust idiom. |
 | D13 | Custom cloud given with a scheme (`https://api.x:8443`) | Python strips it to the host on the *audience* path only; .NET/JS interpolate it into the host label | strip to `host[:port]` on both paths | Both must derive the same host; the raw form cannot form a URL host. |
 | D14 | `from_env` with an unparseable `CLOUD` / `COPILOT_AGENT_TYPE` | Python silently falls back to the default; JS throws | error (`InvalidEnvironmentVariable`) | Silent fallback hides configuration typos. |
+| D16 | `execute` conversation-id transport | .NET/Python force `activity.conversation.id`; JS leaves the activity untouched and sends `conversationId` on the `ExecuteTurnRequest` wrapper | .NET/Python | Origin implementation; the wrapper field is JS-only. |
 | D15 | Audience with an unset cloud | Python/JS default the cloud to `Prod` at construction; .NET's parameterless `ConnectionSettings` leaves it null and `ScopeFromSettings` throws | `None` → `Prod` | `ConnectionSettings::new(env, schema)` must yield an audience; matches the two clients that model construction defaults. |
 
 Anything not listed here that differs from the pinned .NET behaviour is a bug.
@@ -502,7 +551,19 @@ Messages are the upstream messages verbatim so logs line up across SDKs.
 - Token provider invoked per request with the request URL; provider error surfaces as `Error::Token`.
 - `subscribe` sends `GET` + `Last-Event-ID` and surfaces `event_id`.
 
-### 11.3 Live smoke test (opt-in, `#[ignore]`)
+### 11.3 Differential parity (the pinned reference clients vs the port)
+
+`tests/differential/` runs the **upstream clients themselves** — Python from the tagged source, JS
+from the tagged TypeScript via `bun` — and the Rust client through one scenario against one
+recording server, then diffs every request sent and every activity yielded. Divergences from §6 are
+declared in `run.py`'s `EXPECTED`; anything else fails the run. Result at the current pin: 0
+unexpected differences against either reference (8 expected vs Python, 33 vs JS, all D3/D4/D7/D8/
+D9/D16 or their consequences). The harness found three port bugs before it went green — an
+explicitly-empty `suggestedActions.to` being dropped, SSE `id` carried across events, and a missing
+`Content-Type` on subscribe — which is the point of it. .NET cannot run here (no SDK); its behaviour
+is transcribed and cross-checked through the other two. Re-run on every pin bump (§10).
+
+### 11.4 Live smoke test (opt-in, `#[ignore]`)
 
 `tests/live.rs` runs only when `COPILOTSTUDIO_ENVIRONMENT_ID`, `COPILOTSTUDIO_SCHEMA_NAME` and
 `COPILOTSTUDIO_TOKEN` are set: start a conversation, expect at least one activity, send one message,
@@ -514,6 +575,8 @@ doubles as the manual smoke test.
 
 ## 12. Roadmap (post-v0)
 
+- **`CopilotClient` trait** mirroring `ICopilotClient` / `CopilotClientProtocol`, so consumers
+  can mock the client (`ActivityStream<'_>` is already object-safe).
 - **Direct Line fallback transport** (REST + WebSocket streaming) behind a `Transport` seam, for
   agents published to Azure Bot Service instead of D2E. Adds the WebSocket dependency.
 - Split `activity` into its own crate if it grows towards the full Bot Framework schema (cards,

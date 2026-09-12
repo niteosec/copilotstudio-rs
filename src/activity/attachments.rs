@@ -25,9 +25,10 @@ pub struct Attachment {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SuggestedActions {
-    /// Ids of the recipients the actions should be shown to.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub to: Vec<String>,
+    /// Ids of the recipients the actions should be shown to. `None` when absent; an explicitly
+    /// empty list is preserved as such.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to: Option<Vec<String>>,
     /// The actions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub actions: Option<Vec<CardAction>>,

@@ -361,10 +361,11 @@ async fn subscribe_uses_get_with_last_event_id_and_surfaces_event_ids() {
     assert_eq!(events.len(), 2);
     assert_eq!(events[0].event_id.as_deref(), Some("evt-10"));
     assert_eq!(events[0].activity.text.as_deref(), Some("a"));
-    assert_eq!(events[1].event_id.as_deref(), Some("evt-10"), "last-event-id persists");
+    assert_eq!(events[1].event_id, None, "ids are per event; the second block carried none");
 
     let requests: Vec<Request> = server.received_requests().await.unwrap();
-    assert!(!requests[0].headers.contains_key("content-type"));
+    assert_eq!(requests[0].headers.get("content-type").unwrap(), "application/json");
+    assert!(requests[0].body.is_empty());
 
     let err = client.subscribe("  ", None).try_next().await.unwrap_err();
     assert!(matches!(err, Error::InvalidArgument(_)));
