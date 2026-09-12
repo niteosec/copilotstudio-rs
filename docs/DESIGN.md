@@ -576,6 +576,15 @@ non-empty `text`. `examples/token.rs` obtains the token (device-code sign-in); `
 mirrors the upstream console samples (sign-in, then a REPL) and doubles as the manual smoke test.
 Tenant setup is the runbook in `docs/LIVE.md`.
 
+**Live-verified 2026-09-12** against a real published Copilot Studio agent (delegated device-code
+token, scope `CopilotStudio.Copilots.Invoke`, audience `https://api.powerplatform.com`): the client
+resolved the connection URL, authenticated, started a conversation (3 activities streamed, the
+`x-ms-conversationid` captured), sent a message, and decoded the streamed `message` reply — the D2E
+round-trip end to end. One environment note, not a client matter: an agent built with the *GitHub
+Copilot harness* answers over D2E with a capability-limitation message ("This action doesn't support
+agents built with the GitHub Copilot harness") instead of a substantive reply; a classic
+Copilot-Studio-authored agent returns normal content. The client behaves identically either way.
+
 ---
 
 ## 12. Roadmap (post-v0)

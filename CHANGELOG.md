@@ -18,4 +18,5 @@ All notable changes to this crate are recorded here. The format follows
 - Parity tests transcribed from the upstream test suites; activity fixtures generated from the
   upstream Python model; mock-server behaviour tests; a differential harness that runs the pinned
   Python and JS clients against the same recording server; opt-in live smoke test with a runbook
-  (`docs/LIVE.md`); `console` and `token` examples.
+  (`docs/LIVE.md`); `console` and `token` examples. The D2E round-trip is live-verified against a
+  real published agent (delegated auth, SSE streaming, conversation-id capture, activity decode).
