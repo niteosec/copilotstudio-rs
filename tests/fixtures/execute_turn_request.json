@@ -1,0 +1,9 @@
+{
+  "activity": {
+    "conversation": {
+      "id": "456"
+    },
+    "text": "Test message",
+    "type": "message"
+  }
+}

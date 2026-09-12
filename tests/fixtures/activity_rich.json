@@ -1,0 +1,135 @@
+{
+  "attachmentLayout": "list",
+  "attachments": [
+    {
+      "content": {
+        "body": [
+          {
+            "text": "hi",
+            "type": "TextBlock"
+          }
+        ],
+        "type": "AdaptiveCard",
+        "version": "1.5"
+      },
+      "contentType": "application/vnd.microsoft.card.adaptive",
+      "name": "card"
+    }
+  ],
+  "callerId": "urn:botframework:azure",
+  "channelData": {
+    "custom": true,
+    "streamType": "legacy"
+  },
+  "channelId": "msteams",
+  "conversation": {
+    "conversationType": "personal",
+    "id": "conv-1",
+    "tenantId": "t-1"
+  },
+  "deliveryMode": "normal",
+  "entities": [
+    {
+      "streamId": "stream-1",
+      "streamResult": "success",
+      "streamSequence": 3,
+      "streamType": "final",
+      "type": "streaminfo"
+    },
+    {
+      "@type": "Message",
+      "atType": "Message",
+      "citation": [
+        {
+          "position": 1
+        }
+      ],
+      "type": "https://schema.org/Message"
+    },
+    {
+      "foo": "bar",
+      "nested": {
+        "a": [
+          1,
+          2
+        ]
+      },
+      "type": "customEntity"
+    },
+    {
+      "id": "sub",
+      "type": "ProductInfo"
+    }
+  ],
+  "from": {
+    "id": "agent-1",
+    "name": "Agent",
+    "role": "bot"
+  },
+  "id": "act-1",
+  "importance": "normal",
+  "inputHint": "acceptingInput",
+  "listenFor": [
+    "yes",
+    "no"
+  ],
+  "localTimestamp": "2026-09-12T12:11:12.123456+02:00",
+  "localTimezone": "Europe/Zurich",
+  "locale": "en-US",
+  "name": "op",
+  "recipient": {
+    "aadObjectId": "00000000-0000-0000-0000-000000000001",
+    "id": "user-1",
+    "tenantId": "t-1"
+  },
+  "relatesTo": {
+    "activityId": "act-0",
+    "bot": {
+      "id": "agent-1"
+    },
+    "channelId": "msteams",
+    "conversation": {
+      "id": "conv-1"
+    },
+    "serviceUrl": "https://example.invalid/service",
+    "user": {
+      "id": "user-1"
+    }
+  },
+  "replyToId": "act-0",
+  "serviceUrl": "https://example.invalid/service",
+  "speak": "Hello",
+  "suggestedActions": {
+    "actions": [
+      {
+        "title": "Yes",
+        "type": "imBack",
+        "value": "yes"
+      },
+      {
+        "title": "Docs",
+        "type": "openUrl",
+        "value": "https://example.invalid"
+      }
+    ],
+    "to": [
+      "user-1"
+    ]
+  },
+  "summary": "summary",
+  "text": "**Hello**",
+  "textFormat": "markdown",
+  "textHighlights": [
+    {
+      "occurrence": 1,
+      "text": "Hello"
+    }
+  ],
+  "timestamp": "2026-09-12T10:11:12.123456Z",
+  "type": "message",
+  "value": {
+    "k": "v",
+    "n": 1
+  },
+  "valueType": "application/vnd.custom"
+}

@@ -1,0 +1,16 @@
+{
+  "conversation": {
+    "id": "conv-1"
+  },
+  "entities": [
+    {
+      "streamId": "stream-1",
+      "streamSequence": 2,
+      "streamType": "streaming",
+      "type": "streaminfo"
+    }
+  ],
+  "id": "chunk-2",
+  "text": "Hello, wor",
+  "type": "typing"
+}

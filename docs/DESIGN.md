@@ -124,7 +124,9 @@ Test vectors (from `CopilotClientTests.VerifyConnectionUrl`, `env = A47151CF-4F3
 | Other | Prebuilt | `Blah+1_ Blah` | `1234` | **error** |
 
 Path-segment encoding: the JS client percent-encodes `schema_name` and `conversation_id` as path
-segments (`encodeURIComponent`); .NET/Python interpolate raw. The port encodes (§6).
+segments (`encodeURIComponent`); .NET/Python interpolate raw. The port encodes with the WHATWG
+path-segment set (`url::PathSegmentsMut::push`), identical to `encodeURIComponent` for the upstream
+vectors (§6, D2).
 
 ### 3.2 Token audience (`GetTokenAudience` / `ScopeFromSettings`)
 
@@ -356,6 +358,9 @@ arrives with the Direct Line transport (§11).
 | D10 | Final SSE event without trailing blank line | spec (and .NET parser) discards; Python's line parser emits | emit at EOF | Superset that matches Python; the service terminates streams cleanly either way. |
 | D11 | `ask_question` conversation account | .NET may send `conversation: {}` when no id is known | always send the resolved id (Python) | Strictly more informative; identical when an id is known. |
 | D12 | `error` codes | Python `-650xx`, JS `-1400xx` numeric codes | none; typed enum variants with upstream messages | Codes differ between clients; the enum is the Rust idiom. |
+| D13 | Custom cloud given with a scheme (`https://api.x:8443`) | Python strips it to the host on the *audience* path only; .NET/JS interpolate it into the host label | strip to `host[:port]` on both paths | Both must derive the same host; the raw form cannot form a URL host. |
+| D14 | `from_env` with an unparseable `CLOUD` / `COPILOT_AGENT_TYPE` | Python silently falls back to the default; JS throws | error (`InvalidEnvironmentVariable`) | Silent fallback hides configuration typos. |
+| D15 | Audience with an unset cloud | Python/JS default the cloud to `Prod` at construction; .NET's parameterless `ConnectionSettings` leaves it null and `ScopeFromSettings` throws | `None` → `Prod` | `ConnectionSettings::new(env, schema)` must yield an audience; matches the two clients that model construction defaults. |
 
 Anything not listed here that differs from the pinned .NET behaviour is a bug.
 
@@ -373,6 +378,7 @@ let settings = ConnectionSettings::new("env-id", "schema-name")
     .use_experimental_endpoint(false)
     .enable_diagnostics(false);
 let settings = ConnectionSettings::from_env()?;   // ENVIRONMENT_ID, SCHEMA_NAME|AGENT_IDENTIFIER, CLOUD, …
+let settings = ConnectionSettings::direct("https://…");   // direct-connect mode
 
 // Pure helpers
 let scope: String = scope_from_settings(&settings)?;
@@ -392,7 +398,9 @@ let mut s = client.subscribe("conv-id", None);     // Stream<Item = Result<Subsc
 while let Some(activity) = s.try_next().await? { … }
 
 client.conversation_id() -> Option<String>
-client.settings() -> &ConnectionSettings
+client.island_experimental_url() -> Option<String>   // captured `x-ms-d2e-experimental`, if any
+client.settings() -> &ConnectionSettings              // as configured; the captured island URL is applied per request, not written back
+client.scope() -> Result<String, SettingsError>
 
 pub type ActivityStream<'a> = Pin<Box<dyn Stream<Item = Result<Activity, Error>> + Send + 'a>>;
 ```
@@ -412,7 +420,9 @@ collecting a stream is `s.try_collect::<Vec<_>>().await`.
   `Send + 'a` (borrows the client) so it can be driven from spawned tasks via `Arc<CopilotClient>`.
 - **Cancellation = drop.** Dropping the stream aborts the request; no cancellation-token parameter.
 - The client is `Send + Sync`; mutable state (current conversation id, captured experimental URL)
-  sits behind a `std::sync::Mutex` that is never held across an `await`. Concurrent turns on one
+  sits behind a `std::sync::Mutex` that is never held across an `await`. Upstream writes the
+  captured island URL back into `settings.direct_connect_url`; the port keeps `settings` immutable
+  and applies the override when resolving each request URL (same effective behaviour). Concurrent turns on one
   client are allowed, as upstream, and share the conversation-id slot exactly as upstream does.
 - The SSE parser is incremental: it consumes `bytes::Bytes` chunks as they arrive and yields events
   as soon as a blank line (or EOF) completes them, so streamed `typing` chunks surface live.
@@ -438,6 +448,9 @@ pub enum SettingsError {
     CloudBaseAddressRequired, EnvironmentIdRequired, AgentIdentifierRequired,
     CustomCloudOrBaseAddressRequired, SettingsOrCloudRequired, InvalidDirectConnectUrl,
     UnableToResolveCloudFromDirectConnectUrl, InvalidCloudCategory(PowerPlatformCloud),
+    InvalidEnvironmentId,                       // shorter than the suffix split needs (upstream: index exception)
+    InvalidCustomPowerPlatformCloud,            // JS message; a custom cloud that cannot form a host
+    InvalidEnvironmentVariable { name, value }, // from_env (D14)
 }
 ```
 
@@ -480,7 +493,10 @@ Messages are the upstream messages verbatim so logs line up across SDKs.
   `Accept`, `Content-Type`, `User-Agent`).
 - Conversation-id precedence (header > first message; reset on start; `execute` forces).
 - Experimental URL capture: captured only when enabled and no direct URL configured (the three
-  Python tests, ported).
+  Python tests, ported). The "captured" half needs a standard-mode host, which a plain-HTTP mock
+  cannot serve, so it runs as a unit test on the header processor (`process_response_headers`,
+  the JS `processResponseHeaders` seam) and asserts the *next* URL resolves to the island; the
+  "direct URL configured → ignored" half runs end-to-end against the mock.
 - JSON fallback bodies for start / execute / subscribe.
 - Non-2xx → `RequestFailed { status, body }`.
 - Token provider invoked per request with the request URL; provider error surfaces as `Error::Token`.
