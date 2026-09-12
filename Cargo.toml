@@ -35,6 +35,9 @@ wiremock = "0.6"
 [[example]]
 name = "console"
 
+[[example]]
+name = "token"
+
 [lints.rust]
 missing_docs = "warn"
 unsafe_code = "forbid"

@@ -33,6 +33,7 @@
 
 pub mod activity;
 mod agent_type;
+mod api;
 mod client;
 mod connection_settings;
 mod error;
@@ -45,6 +46,7 @@ mod token;
 mod user_agent;
 
 pub use agent_type::{AgentType, UnknownAgentType};
+pub use api::CopilotClientApi;
 pub use client::{ActivityStream, CopilotClient, CopilotClientBuilder, SubscribeStream};
 pub use connection_settings::ConnectionSettings;
 pub use error::{BoxError, Error, SettingsError};

@@ -354,7 +354,7 @@ Every public member of the three clients' packages, and what the port does with 
 | Constructor with `tokenProviderFunction` / `IHttpClientFactory` + logger | ● | – | – | ✓ `builder().token_provider(_).http_client(_)`; logger → `tracing` |
 | Python `client_session_settings` (aiohttp kwargs) | – | ● | – | ≈ `builder().http_client(reqwest::Client)` |
 | `Settings` field / `settings` attribute | ● | ● | (private) | ✓ `settings()` (immutable; island override applied per request) |
-| `ICopilotClient` / `CopilotClientProtocol` interface | ● | ● | – | ✗ no trait yet — planned (§12) so consumers can mock the client |
+| `ICopilotClient` / `CopilotClientProtocol` interface | ● | ● | – | ✓ `CopilotClientApi` (object-safe; adds `conversation_id()` beyond the upstream interface) |
 | `ConnectionSettings`: environment id, schema name, cloud, agent type, custom cloud, direct URL, experimental, diagnostics | ● | ● | ● | ✓ same fields |
 | `ConnectionSettings.CdsBotId` (.NET) | ● | – | – | ✗ only used by `OrchestratedClient` |
 | JS `appClientId` / `tenantId` / `authority` (deprecated auth fields) | – | – | ● | ✗ auth is outside the client |
@@ -452,6 +452,10 @@ client.settings() -> &ConnectionSettings              // as configured; the capt
 client.scope() -> Result<String, SettingsError>
 
 pub type ActivityStream<'a> = Pin<Box<dyn Stream<Item = Result<Activity, Error>> + Send + 'a>>;
+
+// The contract as a trait (ICopilotClient / CopilotClientProtocol), for substitution in tests:
+pub trait CopilotClientApi: Send + Sync { /* the six operations above + conversation_id() */ }
+let shared: Arc<dyn CopilotClientApi> = Arc::new(client);
 ```
 
 Naming maps 1:1 to the upstream names in snake_case (`start_conversation`, `ask_question`,
@@ -565,18 +569,17 @@ is transcribed and cross-checked through the other two. Re-run on every pin bump
 
 ### 11.4 Live smoke test (opt-in, `#[ignore]`)
 
-`tests/live.rs` runs only when `COPILOTSTUDIO_ENVIRONMENT_ID`, `COPILOTSTUDIO_SCHEMA_NAME` and
-`COPILOTSTUDIO_TOKEN` are set: start a conversation, expect at least one activity, send one message,
-expect at least one `message` activity back with a non-empty `text`. `examples/console.rs` mirrors
-the upstream console samples (device-code login through Entra to obtain the token, then a REPL) and
-doubles as the manual smoke test.
+`tests/live.rs` runs only when `COPILOTSTUDIO_TOKEN` plus the agent settings (`ENVIRONMENT_ID` +
+`SCHEMA_NAME`, or `DIRECT_CONNECT_URL`) are set: start a conversation, expect at least one activity
+and a conversation id, send one message, expect at least one `message` activity back with a
+non-empty `text`. `examples/token.rs` obtains the token (device-code sign-in); `examples/console.rs`
+mirrors the upstream console samples (sign-in, then a REPL) and doubles as the manual smoke test.
+Tenant setup is the runbook in `docs/LIVE.md`.
 
 ---
 
 ## 12. Roadmap (post-v0)
 
-- **`CopilotClient` trait** mirroring `ICopilotClient` / `CopilotClientProtocol`, so consumers
-  can mock the client (`ActivityStream<'_>` is already object-safe).
 - **Direct Line fallback transport** (REST + WebSocket streaming) behind a `Transport` seam, for
   agents published to Azure Bot Service instead of D2E. Adds the WebSocket dependency.
 - Split `activity` into its own crate if it grows towards the full Bot Framework schema (cards,

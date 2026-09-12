@@ -54,7 +54,9 @@ Surface (1:1 with the upstream names): `start_conversation`, `start_conversation
 `ask_question`, `send_activity`, `execute`, `subscribe`, `scope_from_settings`, `scope_from_cloud`,
 `connection_url`, `ConnectionSettings::from_env`. A `TokenProvider` trait (called per request with
 the request URL, like the .NET `tokenProviderFunction`) replaces the fixed token when you need
-refresh or exchange; a caller-supplied `reqwest::Client` replaces the default one.
+refresh or exchange; a caller-supplied `reqwest::Client` replaces the default one. The client
+contract is also a trait, `CopilotClientApi` (`ICopilotClient` / `CopilotClientProtocol` upstream),
+so consumers can hold `Arc<dyn CopilotClientApi>` and substitute a test double.
 
 ### Authentication
 
@@ -70,10 +72,12 @@ The crate never acquires tokens. Supported flows, all in the caller:
 
 Tokens are never logged; `Debug` output redacts them.
 
-### Example
+### Examples and the live run
 
 `examples/console.rs` is the twin of the upstream console samples: device-code sign-in (or a
-pre-acquired `COPILOTSTUDIO_TOKEN`), then a chat loop.
+pre-acquired `COPILOTSTUDIO_TOKEN`), then a chat loop. `examples/token.rs` signs in and prints only
+the token, for the smoke test. Tenant setup (agent + a public-client app registration with the
+delegated `CopilotStudio.Copilots.Invoke` permission) is in [`docs/LIVE.md`](docs/LIVE.md).
 
 ```sh
 ENVIRONMENT_ID=… SCHEMA_NAME=… TENANT_ID=… APP_CLIENT_ID=… cargo run --example console
@@ -96,10 +100,14 @@ pinned .NET behaviour is a bug — please file it.
 ```sh
 cargo test                                          # parity vectors, activity round-trips, mock-server behaviour
 cargo test --test live -- --ignored --nocapture     # live smoke test; needs COPILOTSTUDIO_TOKEN + agent settings
+python3 tests/differential/run.py <Agents-for-python> [--js <Agents-for-js>]   # the pinned upstream clients vs this one
 ```
 
 Activity fixtures under `tests/fixtures/` are generated from the upstream Python model
 (`tests/fixtures/generate.py`), so round-trip tests prove parity against the reference itself.
+`tests/differential/` goes further: it runs the pinned Python and JS clients and this client
+through one scenario against one recording server and diffs every request and every yielded
+activity; only the divergences enumerated in the design are allowed.
 
 ## License
 

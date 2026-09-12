@@ -13,8 +13,9 @@
 //! ```
 //! Optional: `CLOUD`, `COPILOT_AGENT_TYPE`, `DIRECT_CONNECT_URL`, `LOCALE`, `ENABLE_DIAGNOSTICS=true`.
 
+mod common;
+
 use std::io::Write;
-use std::time::Duration;
 
 use copilotstudio_client::activity::constants::text_format_types;
 use copilotstudio_client::{ActivityType, ConnectionSettings, CopilotClient, StartRequest};
@@ -32,7 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let token = match std::env::var("COPILOTSTUDIO_TOKEN") {
         Ok(t) if !t.is_empty() => t,
-        _ => device_code_login(&scope).await?,
+        _ => common::device_code_login(&scope).await?,
     };
     let client = CopilotClient::new(settings, token);
 
@@ -85,57 +86,5 @@ fn print_activity(activity: &copilotstudio_client::Activity) {
         }
         ActivityType::Event => print!("+"),
         ref other => println!("Activity type: [{other}]"),
-    }
-}
-
-/// Microsoft identity platform device code flow (public client, no secret).
-/// <https://learn.microsoft.com/entra/identity-platform/v2-oauth2-device-code>
-async fn device_code_login(scope: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let tenant = std::env::var("TENANT_ID")
-        .map_err(|_| "set COPILOTSTUDIO_TOKEN, or TENANT_ID + APP_CLIENT_ID for device-code login")?;
-    let client_id = std::env::var("APP_CLIENT_ID").map_err(|_| "APP_CLIENT_ID is required for device-code login")?;
-    let authority = std::env::var("AUTHORITY").unwrap_or_else(|_| "https://login.microsoftonline.com".to_owned());
-    let http = reqwest::Client::new();
-
-    let form = url::form_urlencoded::Serializer::new(String::new())
-        .append_pair("client_id", &client_id)
-        .append_pair("scope", scope)
-        .finish();
-    let device: serde_json::Value = http
-        .post(format!("{authority}/{tenant}/oauth2/v2.0/devicecode"))
-        .header("content-type", "application/x-www-form-urlencoded")
-        .body(form)
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?;
-    eprintln!("{}", device["message"].as_str().unwrap_or("Complete the sign-in in your browser."));
-    let device_code = device["device_code"].as_str().ok_or("no device_code in response")?.to_owned();
-    let mut interval = Duration::from_secs(device["interval"].as_u64().unwrap_or(5));
-
-    loop {
-        tokio::time::sleep(interval).await;
-        let form = url::form_urlencoded::Serializer::new(String::new())
-            .append_pair("grant_type", "urn:ietf:params:oauth:grant-type:device_code")
-            .append_pair("client_id", &client_id)
-            .append_pair("device_code", &device_code)
-            .finish();
-        let response = http
-            .post(format!("{authority}/{tenant}/oauth2/v2.0/token"))
-            .header("content-type", "application/x-www-form-urlencoded")
-            .body(form)
-            .send()
-            .await?;
-        let body: serde_json::Value = response.json().await?;
-        if let Some(token) = body["access_token"].as_str() {
-            return Ok(token.to_owned());
-        }
-        match body["error"].as_str() {
-            Some("authorization_pending") => continue,
-            Some("slow_down") => interval += Duration::from_secs(5),
-            Some(other) => return Err(format!("{other}: {}", body["error_description"].as_str().unwrap_or("")).into()),
-            None => return Err(format!("unexpected token response: {body}").into()),
-        }
     }
 }

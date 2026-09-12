@@ -13,6 +13,9 @@ All notable changes to this crate are recorded here. The format follows
 - `CopilotClient`: `start_conversation`, `start_conversation_with_request`, `ask_question`,
   `send_activity`, `execute`, `subscribe`; SSE streaming with the .NET JSON fallback;
   `x-ms-conversationid` / `x-ms-d2e-experimental` handling; `TokenProvider` / `StaticToken`.
+- `CopilotClientApi` trait (`ICopilotClient` / `CopilotClientProtocol`) for substitution in tests.
 - Bot Framework `Activity` schema with open entities, `streaminfo` view, extension data.
 - Parity tests transcribed from the upstream test suites; activity fixtures generated from the
-  upstream Python model; mock-server behaviour tests; opt-in live smoke test; console example.
+  upstream Python model; mock-server behaviour tests; a differential harness that runs the pinned
+  Python and JS clients against the same recording server; opt-in live smoke test with a runbook
+  (`docs/LIVE.md`); `console` and `token` examples.
