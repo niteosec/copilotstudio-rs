@@ -149,6 +149,20 @@ async fn execute_forces_conversation_id_and_makes_it_current() {
 }
 
 #[tokio::test]
+async fn ask_question_without_a_known_conversation_sends_an_empty_conversation_account() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(format!("{BOT_PATH}/conversations")))
+        .and(body_json(json!({"activity": {"type": "message", "text": "first", "conversation": {}}})))
+        .respond_with(sse_response(&[]))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let client = CopilotClient::new(settings(&server), "tok");
+    collect(client.ask_question("first", None)).await;
+}
+
+#[tokio::test]
 async fn send_activity_prefers_the_activity_conversation_id() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

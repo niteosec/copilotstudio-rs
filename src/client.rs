@@ -177,7 +177,9 @@ impl CopilotClient {
             .map(str::to_owned)
             .filter(|s| !s.trim().is_empty())
             .unwrap_or_else(|| self.lock().conversation_id.clone());
-        let activity = Activity { conversation: Some(ConversationAccount::new(id)), ..Activity::message(question) };
+        // No id known yet → `conversation: {}` (the .NET shape) rather than an empty-string id.
+        let conversation = if id.is_empty() { ConversationAccount::default() } else { ConversationAccount::new(id) };
+        let activity = Activity { conversation: Some(conversation), ..Activity::message(question) };
         self.send_activity(activity)
     }
 
