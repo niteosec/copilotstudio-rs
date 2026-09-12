@@ -1,0 +1,29 @@
+# The pinned upstream this crate mirrors. Change only via the pin-bump procedure in docs/DESIGN.md §10.
+# The .NET client is the primary reference; Python and JS are cross-checks and tie-breakers.
+
+[net]
+repository = "https://github.com/microsoft/Agents-for-net"
+tag        = "v1.8.77"
+commit     = "d2493a5feebaaf742a456d24f8caa9878d3f2373"
+date       = "2026-08-24"
+path       = "src/libraries/Client/Microsoft.Agents.CopilotStudio.Client"
+role       = "primary"
+
+[python]
+repository = "https://github.com/microsoft/Agents-for-python"
+tag        = "v1.5.0"
+commit     = "d3f427d81b6d5fdd40bcb8ad16b78dbeb4530631"
+date       = "2026-08-26"
+path       = "libraries/microsoft-agents-copilotstudio-client"
+role       = "cross-check"
+
+[js]
+repository = "https://github.com/microsoft/Agents-for-js"
+tag        = "v1.8"
+commit     = "8f07a596a54b59219435af4a574d0740c814d36b"
+date       = "2026-08-27"
+path       = "packages/agents-copilotstudio-client"
+role       = "cross-check"
+
+[protocol]
+api_version = "2022-03-01-preview"
